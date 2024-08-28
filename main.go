@@ -30,6 +30,8 @@ var (
 	sweepDirection  = 1   // 1 for increasing, -1 for decreasing
 	sweepRate       = 1.0 // Hz per second
 	frequencyMu     sync.RWMutex
+	volumeMu        sync.RWMutex
+	volume          = 1.0
 )
 
 // Calibration data
@@ -72,9 +74,12 @@ func generateSineWave(frames uint32) []float32 {
 	frequencyMu.RLock()
 	currentFrequency := frequency
 	frequencyMu.RUnlock()
+	volumeMu.RLock()
+	currentVolume := volume
+	volumeMu.RUnlock()
 	for i := range data {
 		t := float64(i) / sampleRate
-		data[i] = float32(amplitude * math.Sin(2*math.Pi*currentFrequency*t+phase))
+		data[i] = float32(amplitude * currentVolume * math.Sin(2*math.Pi*currentFrequency*t+phase))
 	}
 	phase += 2 * math.Pi * currentFrequency * float64(frames) / sampleRate
 	phase = math.Mod(phase, 2*math.Pi) // Keep phase bounded
@@ -200,7 +205,11 @@ func playbackAndAnalyzeCallback(pOutputSample, pInputSample []byte, framecount u
 		status = "MATCH"
 	}
 
-	fmt.Printf("\rPlayed: %.2f Hz, Detected: %.2f Hz, Status: %s", currentFrequency, avgFreq, status)
+	volumeMu.RLock()
+	currentVolume := volume
+	volumeMu.RUnlock()
+
+	fmt.Printf("\rPlayed: %.2f Hz, Detected: %.2f Hz, Status: %s, Volume: %.2f", currentFrequency, avgFreq, status, currentVolume)
 }
 
 func flagVar(p *float64, name string, shorthand string, value float64, usage string) {
@@ -295,6 +304,13 @@ func main() {
 	for shouldRun {
 		select {
 		case <-sig:
+			fmt.Println("\nGot interrupt signal. Stopping...")
+			for i := 100; i >= 0; i-- {
+				volumeMu.Lock()
+				volume = float64(i) / 100.0
+				volumeMu.Unlock()
+				time.Sleep(10 * time.Millisecond)
+			}
 			shouldRun = false
 		case <-ticker.C:
 			if minFrequency < maxFrequency {
