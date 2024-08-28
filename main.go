@@ -35,8 +35,10 @@ var (
 )
 
 // Calibration data
+// well seems to work without adjustment for me
+// guess we need to first listen and note background noise levels for lower frequencies
 var calibration = map[float64]float64{
-	20:    0.01,
+	20:    1.2,
 	100:   1.0,
 	300:   1.0,
 	1000:  1.1,
@@ -319,7 +321,6 @@ func main() {
 		}
 	}
 
-	fmt.Println("\nStopping...")
-	time.Sleep(time.Second)
+	time.Sleep(time.Second) // intentional
 	fmt.Println("Playback and analysis stopped.")
 }
