@@ -17,17 +17,22 @@ import (
 )
 
 var (
-	sampleRate      = 48000
+	sampleRate      = float64(48000)
 	channels        = uint32(1)
 	frequency       float64
+	minFrequency    float64
+	maxFrequency    float64
 	amplitude       = 0.5
 	phase           float64
 	detectedFreqs   = make([]float64, 0, 10)
 	detectedFreqsMu sync.Mutex
+	shouldRun       = true
+	sweepDirection  = 1   // 1 for increasing, -1 for decreasing
+	sweepRate       = 1.0 // Hz per second
+	frequencyMu     sync.RWMutex
 )
 
 // Calibration data
-// use this to adjust the calibration of the frequency detection based on the microphone used
 var calibration = map[float64]float64{
 	20:    0.01,
 	100:   1.0,
@@ -64,11 +69,15 @@ func interpolateCalibration(freq float64) float64 {
 
 func generateSineWave(frames uint32) []float32 {
 	data := make([]float32, frames)
+	frequencyMu.RLock()
+	currentFrequency := frequency
+	frequencyMu.RUnlock()
 	for i := range data {
-		t := float64(i) / float64(sampleRate)
-		data[i] = float32(amplitude * math.Sin(2*math.Pi*frequency*t+phase))
+		t := float64(i) / sampleRate
+		data[i] = float32(amplitude * math.Sin(2*math.Pi*currentFrequency*t+phase))
 	}
-	phase += 2 * math.Pi * frequency * float64(frames) / float64(sampleRate)
+	phase += 2 * math.Pi * currentFrequency * float64(frames) / sampleRate
+	phase = math.Mod(phase, 2*math.Pi) // Keep phase bounded
 	return data
 }
 
@@ -97,24 +106,20 @@ func parabolicInterpolation(f []float64, x int) (float64, float64) {
 }
 
 func detectFrequency(inData []float32) float64 {
-	// Convert input to float64
 	data := make([]float64, len(inData))
 	for i, v := range inData {
 		data[i] = float64(v)
 	}
 
-	// Apply Hann window
 	window := hannWindow(len(data))
 	for i := range data {
 		data[i] *= window[i]
 	}
 
-	// Pad data
-	paddedLength := len(data) * 3
+	paddedLength := len(data) * 4
 	paddedData := make([]float64, paddedLength)
 	copy(paddedData, data)
 
-	// Perform FFT
 	fft := fourier.NewFFT(paddedLength)
 	coeffs := fft.Coefficients(nil, paddedData)
 	magnitude := make([]float64, len(coeffs))
@@ -122,7 +127,6 @@ func detectFrequency(inData []float32) float64 {
 		magnitude[i] = math.Sqrt(real(c)*real(c) + imag(c)*imag(c))
 	}
 
-	// Find peaks
 	maxMag := 0.0
 	for _, m := range magnitude {
 		if m > maxMag {
@@ -139,38 +143,32 @@ func detectFrequency(inData []float32) float64 {
 			}
 		}
 
-		// Parabolic interpolation
 		trueI, _ := parabolicInterpolation(magnitude, maxPeak)
-		peakFrequency := trueI * float64(sampleRate) / float64(paddedLength)
+		peakFrequency := trueI * sampleRate / float64(paddedLength)
 
 		return peakFrequency
 	}
 
-	return 0 // No peak found
+	return 0
 }
 
-// float32ToBytes converts a float32 to a byte slice
 func float32ToBytes(f float32) []byte {
 	var buf [4]byte
 	*(*float32)(unsafe.Pointer(&buf[0])) = f
 	return buf[:]
 }
 
-// bytesToFloat32 converts a byte slice to a float32
 func bytesToFloat32(b []byte) float32 {
 	return *(*float32)(unsafe.Pointer(&b[0]))
 }
 
 func playbackAndAnalyzeCallback(pOutputSample, pInputSample []byte, framecount uint32) {
-	// Generate sine wave
 	sineWave := generateSineWave(framecount)
 
-	// Copy sine wave to output
 	for i, sample := range sineWave {
 		copy(pOutputSample[i*4:(i+1)*4], float32ToBytes(sample))
 	}
 
-	// Analyze input
 	inputFloat := make([]float32, framecount)
 	for i := range inputFloat {
 		inputFloat[i] = bytesToFloat32(pInputSample[i*4 : (i+1)*4])
@@ -192,19 +190,62 @@ func playbackAndAnalyzeCallback(pOutputSample, pInputSample []byte, framecount u
 	avgFreq /= float64(len(detectedFreqs))
 	detectedFreqsMu.Unlock()
 
-	errorMargin := 0.05 * frequency
+	frequencyMu.RLock()
+	currentFrequency := frequency
+	frequencyMu.RUnlock()
+
+	errorMargin := 0.05 * currentFrequency
 	status := "MISMATCH"
-	if math.Abs(avgFreq-frequency) <= errorMargin {
+	if math.Abs(avgFreq-currentFrequency) <= errorMargin {
 		status = "MATCH"
 	}
 
-	fmt.Printf("\rPlayed: %.2f Hz, Detected: %.2f Hz, Status: %s", frequency, avgFreq, status)
+	fmt.Printf("\rPlayed: %.2f Hz, Detected: %.2f Hz, Status: %s", currentFrequency, avgFreq, status)
+}
+
+func flagVar(p *float64, name string, shorthand string, value float64, usage string) {
+	if shorthand != "" {
+		flag.Float64Var(p, shorthand, value, usage)
+	}
+	flag.Float64Var(p, name, value, usage)
+}
+
+func initFlags() {
+	flag.Usage = func() {
+		fmt.Fprintf(flag.CommandLine.Output(), "Usage of %s:\n", os.Args[0])
+		flag.PrintDefaults()
+	}
+
+	flagVar(&maxFrequency, "frequency", "f", 1000, "Maximum frequency of the sine wave in Hz")
+	flagVar(&amplitude, "amplitude", "a", 0.5, "Amplitude of the sine wave")
+	flagVar(&sampleRate, "sample-rate", "r", 48000, "Sample rate in Hz")
+	flagVar(&minFrequency, "min-frequency", "m", 0, "Minimum frequency to start sweeping from in Hz")
+	flagVar(&sweepRate, "sweep-rate", "s", 1.0, "Frequency change rate in Hz per second")
+
+	flag.Parse()
+}
+
+func updateFrequency() {
+	frequencyMu.Lock()
+	defer frequencyMu.Unlock()
+
+	frequency += float64(sweepDirection) * sweepRate
+	if sweepDirection == 1 && frequency >= maxFrequency {
+		frequency = maxFrequency
+		sweepDirection = -1
+	} else if sweepDirection == -1 && frequency <= minFrequency {
+		frequency = minFrequency
+		sweepDirection = 1
+	}
 }
 
 func main() {
-	// Parse command-line arguments
-	flag.Float64Var(&frequency, "f", 440, "Frequency of the sine wave in Hz")
-	flag.Parse()
+	initFlags()
+
+	if minFrequency == 0 {
+		minFrequency = maxFrequency // If no min frequency is set, use a fixed frequency
+	}
+	frequency = minFrequency // Start from the minimum frequency
 
 	ctx, err := malgo.InitContext(nil, malgo.ContextConfig{}, nil)
 	if err != nil {
@@ -239,11 +280,28 @@ func main() {
 		os.Exit(1)
 	}
 
-	fmt.Printf("Playing and analyzing %f Hz. Press Ctrl+C to stop.\n", frequency)
+	if minFrequency < maxFrequency {
+		fmt.Printf("Sweeping frequency from %f Hz to %f Hz. Press Ctrl+C to stop.\n", minFrequency, maxFrequency)
+	} else {
+		fmt.Printf("Playing and analyzing %f Hz. Press Ctrl+C to stop.\n", frequency)
+	}
 
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
-	<-sig
+
+	ticker := time.NewTicker(10 * time.Millisecond) // Update frequency more frequently
+	defer ticker.Stop()
+
+	for shouldRun {
+		select {
+		case <-sig:
+			shouldRun = false
+		case <-ticker.C:
+			if minFrequency < maxFrequency {
+				updateFrequency()
+			}
+		}
+	}
 
 	fmt.Println("\nStopping...")
 	time.Sleep(time.Second)
