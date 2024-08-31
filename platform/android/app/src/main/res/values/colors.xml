@@ -1,0 +1,6 @@
+<resources>
+    <color name="primaryTextColor">#333333</color> 
+    <color name="secondaryTextColor">#666666</color> 
+    <color name="buttonTextColor">#FFFFFF</color>
+    <color name="backgroundColor">#EEEEEE</color>
+</resources>

@@ -92,6 +92,15 @@ func StopAudio() error {
 	return gen.Stop()
 }
 
+func SetAmplitude(amplitude float64) {
+	mutex.Lock()
+	defer mutex.Unlock()
+
+	if gen != nil {
+		gen.SetAmplitude(amplitude)
+	}
+}
+
 // SetSweepRate sets the sweep rate
 func SetSweepRate(rate float64) {
 	mutex.Lock()
