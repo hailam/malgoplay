@@ -1,4 +1,4 @@
-package duplex_malgoplay
+package fsgdx
 
 import (
 	"fmt"

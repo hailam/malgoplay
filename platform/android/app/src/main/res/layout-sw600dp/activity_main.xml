@@ -13,6 +13,13 @@
         android:gravity="center"
         android:layout_marginBottom="32dp" />
 
+    <!-- Mode Selection Spinner -->
+    <Spinner
+        android:id="@+id/mode_spinner"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginBottom="16dp" />
+
     <EditText
         android:id="@+id/frequency_input"
         android:layout_width="match_parent"
@@ -53,11 +60,14 @@
         android:textSize="20sp"
         android:layout_marginTop="24dp" />
 
-    <Button
-        android:id="@+id/stop_button"
+    <!-- Placeholder for animation/graphic -->
+    <FrameLayout
+        android:id="@+id/animation_container"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="Stop"
-        android:textSize="20sp"
-        android:layout_marginTop="16dp" />
+        android:layout_gravity="center_horizontal"
+        android:layout_marginTop="24dp"
+        android:visibility="gone">
+        <!-- Placeholder for animation/graphic when playing -->
+    </FrameLayout>
 </LinearLayout>

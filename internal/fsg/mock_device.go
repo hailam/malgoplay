@@ -1,6 +1,7 @@
 package fsg
 
 import (
+	"encoding/binary"
 	"math"
 	"sync"
 
@@ -26,8 +27,29 @@ func NewMockDevice(sampleRate, channels uint32) *MockDevice {
 func (m *MockDevice) Start() error {
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
+
+	if m.dataCallback == nil {
+		// Set the callback to a default no-op if it's not already set
+		m.dataCallback = func(pOutputSample, pInputSamples []byte, framecount uint32) {
+			// Default no-op callback
+		}
+	}
+
 	m.isStarted = true
+	println("Mock device started.")
 	return nil
+}
+
+func (m *MockDevice) SetCallback(dataCallback malgo.DataProc) {
+	m.mutex.Lock()
+	defer m.mutex.Unlock()
+	m.dataCallback = dataCallback
+	println("MockDevice: Callback set.")
+
+	if m.isStarted {
+		// If the device is already started, ensure callback is set
+		println("Callback set for running mock device.")
+	}
 }
 
 func (m *MockDevice) Stop() error {
@@ -41,27 +63,36 @@ func (m *MockDevice) Uninit() error {
 	return nil
 }
 
-func (m *MockDevice) SetDataCallback(dataCallback malgo.DataProc) {
-	m.dataCallback = dataCallback
-}
-
 func (m *MockDevice) GenerateSamples(frameCount uint32) {
-	if m.dataCallback == nil {
+	m.mutex.Lock()
+	defer m.mutex.Unlock()
+
+	if m.dataCallback == nil || !m.isStarted {
+		println("MockDevice: No callback or device not started.")
 		return
 	}
 
 	byteCount := frameCount * m.channels * 4 // 4 bytes per float32
 	output := make([]byte, byteCount)
+
+	println("MockDevice generating samples.")
 	m.dataCallback(output, nil, frameCount)
 
-	// Convert bytes back to float32 for easier inspection
 	m.capturedSamples = make([]float32, frameCount*m.channels)
 	for i := uint32(0); i < frameCount*m.channels; i++ {
-		m.capturedSamples[i] = float32frombytes(output[i*4 : (i+1)*4])
+		m.capturedSamples[i] = math.Float32frombits(binary.LittleEndian.Uint32(output[i*4 : (i+1)*4]))
+	}
+
+	if len(m.capturedSamples) == 0 {
+		println("MockDevice: No samples captured.")
+	} else {
+		println("MockDevice: Samples captured.")
 	}
 }
 
 func (m *MockDevice) GetCapturedSamples() []float32 {
+	m.mutex.Lock()
+	defer m.mutex.Unlock()
 	return m.capturedSamples
 }
 

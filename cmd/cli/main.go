@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"syscall"
 	"time"
 
 	audio "github.com/hailam/malgoplay/internal/fsg"
@@ -40,10 +41,7 @@ func main() {
 	flag.StringVar(&sweepMode, "o", "linear", "Sweep mode (shorthand)")
 	flag.Parse()
 
-	gen, err := audio.NewFrequencySweepGenerator(minFreq, maxFreq, uint32(sampleRate), uint32(channels))
-	if err != nil {
-		log.Fatalf("Failed to create generator: %v", err)
-	}
+	gen := audio.NewFrequencySweepGenerator(minFreq, maxFreq, uint32(sampleRate), uint32(channels))
 	defer gen.Close()
 
 	gen.SetSweepRate(sweepRate)
@@ -85,24 +83,19 @@ func main() {
 	deviceConfig.Playback.Channels = uint32(channels)
 	deviceConfig.SampleRate = uint32(sampleRate)
 
-	device, err := malgo.InitDevice(ctx.Context, deviceConfig, malgo.DeviceCallbacks{
-		Data: gen.DataCallback,
-	})
-	if err != nil {
-		log.Fatalf("Failed to initialize device: %v", err)
-	}
-	defer device.Uninit()
+	// Set the device configuration for the generator
+	gen.SetDeviceConfig(deviceConfig)
 
-	err = device.Start()
-	if err != nil {
-		log.Fatalf("Failed to start device: %v", err)
+	// Start the generator, which starts the device internally
+	if err := gen.Start(); err != nil {
+		log.Fatalf("Failed to start frequency sweep generator: %v", err)
 	}
 
 	if duration == 0 {
 		fmt.Println("Playing sweep indefinitely. Press Ctrl+C to stop.")
 		// Set up channel to listen for interrupt signal
 		c := make(chan os.Signal, 1)
-		signal.Notify(c, os.Interrupt)
+		signal.Notify(c, os.Interrupt, syscall.SIGTERM)
 		// Block until we receive an interrupt signal
 		<-c
 	} else {
@@ -111,8 +104,9 @@ func main() {
 	}
 
 	fmt.Println("Stopping playback...")
-	err = device.Stop()
-	if err != nil {
-		log.Fatalf("Failed to stop device: %v", err)
+	if err := gen.Stop(); err != nil {
+		log.Fatalf("Failed to stop frequency sweep generator: %v", err)
 	}
+
+	time.Sleep(500 * time.Millisecond)
 }
