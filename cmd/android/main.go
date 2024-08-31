@@ -5,7 +5,7 @@ import (
 	"time"
 
 	"github.com/gen2brain/malgo"
-	"github.com/hailam/malgoplay/malgoplay"
+	malgoplay "github.com/hailam/malgoplay/internal/fsgdx"
 )
 
 var (

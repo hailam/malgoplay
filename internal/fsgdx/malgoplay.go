@@ -1,4 +1,4 @@
-package malgoplay
+package duplex_malgoplay
 
 import (
 	"fmt"

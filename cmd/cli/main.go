@@ -3,89 +3,116 @@ package main
 import (
 	"flag"
 	"fmt"
+	"log"
 	"os"
 	"os/signal"
-	"syscall"
 	"time"
 
-	"github.com/hailam/malgoplay/malgoplay"
+	audio "github.com/hailam/malgoplay/internal/fsg"
+
+	"github.com/gen2brain/malgo"
 )
-
-var (
-	shouldRun = true
-)
-
-func flagVar(p *float64, name string, shorthand string, value float64, usage string) {
-	if shorthand != "" {
-		flag.Float64Var(p, shorthand, value, usage)
-	}
-	flag.Float64Var(p, name, value, usage)
-}
-
-func initFlags() {
-	flag.Usage = func() {
-		fmt.Fprintf(flag.CommandLine.Output(), "Usage of %s:\n", os.Args[0])
-		flag.PrintDefaults()
-	}
-
-	flagVar(&malgoplay.MaxFrequency, "f", "frequency", 1000, "Maximum frequency of the sine wave in Hz")
-	flagVar(&malgoplay.Amplitude, "a", "amplitude", 0.5, "Amplitude of the sine wave")
-	flagVar(&malgoplay.SampleRate, "r", "sample-rate", 48000, "Sample rate in Hz")
-	flagVar(&malgoplay.MinFrequency, "m", "min-frequency", 0, "Minimum frequency to start sweeping from in Hz")
-	flagVar(&malgoplay.SweepRate, "s", "sweep-rate", 1.0, "Frequency change rate in Hz per second")
-
-	flag.Parse()
-}
 
 func main() {
-	initFlags()
+	var (
+		minFreq    float64
+		maxFreq    float64
+		sampleRate uint
+		channels   uint
+		duration   int
+		sweepRate  float64
+		sweepMode  string
+	)
 
-	if malgoplay.MinFrequency == 0 {
-		malgoplay.MinFrequency = malgoplay.MaxFrequency // If no min frequency is set, use a fixed frequency
-	}
-	malgoplay.SetFrequency(malgoplay.MinFrequency) // Start from the minimum frequency
+	flag.Float64Var(&minFreq, "min", 220, "Minimum frequency")
+	flag.Float64Var(&minFreq, "m", 220, "Minimum frequency (shorthand)")
+	flag.Float64Var(&maxFreq, "max", 880, "Maximum frequency")
+	flag.Float64Var(&maxFreq, "M", 880, "Maximum frequency (shorthand)")
+	flag.UintVar(&sampleRate, "rate", 44100, "Sample rate")
+	flag.UintVar(&sampleRate, "r", 44100, "Sample rate (shorthand)")
+	flag.UintVar(&channels, "channels", 2, "Number of channels")
+	flag.UintVar(&channels, "c", 2, "Number of channels (shorthand)")
+	flag.IntVar(&duration, "duration", 10, "Duration in seconds")
+	flag.IntVar(&duration, "d", 10, "Duration in seconds (shorthand)")
+	flag.Float64Var(&sweepRate, "sweep", 1, "Sweep rate in Hz")
+	flag.Float64Var(&sweepRate, "s", 1, "Sweep rate in Hz (shorthand)")
+	flag.StringVar(&sweepMode, "mode", "linear", "Sweep mode (linear, sine, triangle, exponential, logarithmic, square, sawtooth, random)")
+	flag.StringVar(&sweepMode, "o", "linear", "Sweep mode (shorthand)")
+	flag.Parse()
 
-	device, err := malgoplay.InitDevice()
+	gen, err := audio.NewFrequencySweepGenerator(minFreq, maxFreq, uint32(sampleRate), uint32(channels))
 	if err != nil {
-		fmt.Println(err)
-		os.Exit(1)
+		log.Fatalf("Failed to create generator: %v", err)
 	}
-	defer malgoplay.CleanupDevice(device)
+	defer gen.Close()
+
+	gen.SetSweepRate(sweepRate)
+
+	switch sweepMode {
+	case "linear":
+		gen.SetSweepMode(audio.SweepModeLinear)
+	case "sine":
+		gen.SetSweepMode(audio.SweepModeSine)
+	case "triangle":
+		gen.SetSweepMode(audio.SweepModeTriangle)
+	case "exponential":
+		gen.SetSweepMode(audio.SweepModeExponential)
+	case "logarithmic":
+		gen.SetSweepMode(audio.SweepModeLogarithmic)
+	case "square":
+		gen.SetSweepMode(audio.SweepModeSquare)
+	case "sawtooth":
+		gen.SetSweepMode(audio.SweepModeSawtooth)
+	case "random":
+		gen.SetSweepMode(audio.SweepModeRandom)
+	default:
+		log.Fatalf("Unknown sweep mode: %s", sweepMode)
+	}
+
+	ctx, err := malgo.InitContext(nil, malgo.ContextConfig{}, func(message string) {
+		fmt.Printf("Log: %v\n", message)
+	})
+	if err != nil {
+		log.Fatalf("Failed to initialize context: %v", err)
+	}
+	defer func() {
+		_ = ctx.Uninit()
+		ctx.Free()
+	}()
+
+	deviceConfig := malgo.DefaultDeviceConfig(malgo.Playback)
+	deviceConfig.Playback.Format = malgo.FormatF32
+	deviceConfig.Playback.Channels = uint32(channels)
+	deviceConfig.SampleRate = uint32(sampleRate)
+
+	device, err := malgo.InitDevice(ctx.Context, deviceConfig, malgo.DeviceCallbacks{
+		Data: gen.DataCallback,
+	})
+	if err != nil {
+		log.Fatalf("Failed to initialize device: %v", err)
+	}
+	defer device.Uninit()
 
 	err = device.Start()
 	if err != nil {
-		fmt.Println(err)
-		os.Exit(1)
+		log.Fatalf("Failed to start device: %v", err)
 	}
 
-	if malgoplay.MinFrequency < malgoplay.MaxFrequency {
-		fmt.Printf("Sweeping frequency from %f Hz to %f Hz. Press Ctrl+C to stop.\n", malgoplay.MinFrequency, malgoplay.MaxFrequency)
+	if duration == 0 {
+		fmt.Println("Playing sweep indefinitely. Press Ctrl+C to stop.")
+		// Set up channel to listen for interrupt signal
+		c := make(chan os.Signal, 1)
+		signal.Notify(c, os.Interrupt)
+		// Block until we receive an interrupt signal
+		<-c
 	} else {
-		fmt.Printf("Playing and analyzing %f Hz. Press Ctrl+C to stop.\n", malgoplay.GetFrequency())
+		fmt.Printf("Playing sweep for %d seconds...\n", duration)
+		time.Sleep(time.Duration(duration) * time.Second)
 	}
 
-	sig := make(chan os.Signal, 1)
-	signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
-
-	ticker := time.NewTicker(10 * time.Millisecond)
-	defer ticker.Stop()
-
-	for shouldRun {
-		select {
-		case <-sig:
-			fmt.Println("\nGot interrupt signal. Stopping...")
-			for i := 100; i >= 0; i-- {
-				malgoplay.SetVolume(float64(i) / 100.0)
-				time.Sleep(10 * time.Millisecond)
-			}
-			shouldRun = false
-		case <-ticker.C:
-			if malgoplay.MinFrequency < malgoplay.MaxFrequency {
-				malgoplay.UpdateFrequency()
-			}
-		}
+	fmt.Println("Stopping playback...")
+	err = device.Stop()
+	if err != nil {
+		log.Fatalf("Failed to stop device: %v", err)
 	}
-
-	time.Sleep(time.Second) // intentional
-	fmt.Println("Playback and analysis stopped.")
 }
