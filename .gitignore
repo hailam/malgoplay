@@ -1,1 +1,12 @@
-malgoplay
+bin
+platform/android/.gradle
+platform/android/local.properties
+platform/android/build
+platform/android/app/build
+platform/android/malgoplay-aar/build
+platform/android/fsg-aar/build
+platform/android/malgoplay-aar/*.aar
+platform/android/fsg-aar/*.aar
+platform/android/malgoplay-aar/*.jar
+platform/android/fsg-aar/*.jar
+platform/android/app/.gradle

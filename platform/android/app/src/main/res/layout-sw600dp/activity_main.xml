@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:padding="32dp">
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Malgoplay Settings"
+        android:textSize="24sp"
+        android:gravity="center"
+        android:layout_marginBottom="32dp" />
+
+    <!-- Mode Selection Spinner -->
+    <Spinner
+        android:id="@+id/mode_spinner"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginBottom="16dp" />
+
+    <EditText
+        android:id="@+id/frequency_input"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:hint="Enter Max Frequency (Hz)"
+        android:inputType="numberDecimal"
+        android:textSize="20sp" />
+
+    <EditText
+        android:id="@+id/amplitude_input"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:hint="Enter Amplitude"
+        android:inputType="numberDecimal"
+        android:textSize="20sp" />
+
+    <EditText
+        android:id="@+id/min_frequency_input"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:hint="Enter Min Frequency (Hz)"
+        android:inputType="numberDecimal"
+        android:textSize="20sp" />
+
+    <EditText
+        android:id="@+id/sweep_rate_input"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:hint="Enter Sweep Rate (Hz per second)"
+        android:inputType="numberDecimal"
+        android:textSize="20sp" />
+
+    <Button
+        android:id="@+id/play_button"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Play"
+        android:textSize="20sp"
+        android:layout_marginTop="24dp" />
+
+    <!-- Placeholder for animation/graphic -->
+    <FrameLayout
+        android:id="@+id/animation_container"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center_horizontal"
+        android:layout_marginTop="24dp"
+        android:visibility="gone">
+        <!-- Placeholder for animation/graphic when playing -->
+    </FrameLayout>
+</LinearLayout>
