@@ -38,6 +38,15 @@ var (
 	}
 )
 
+/*
+ - this was the original go code ported from the python poc
+ - this code used duplex mode for audio input and output since detecting frequency was needed
+ - record permission is already handled in android app since,
+ frequency detection needs to be implemented in new fsg package by referrring to this code
+ - calibration does not need to be implemented in new fsg package,
+ since real tests shows it matches the expected frequency unlike in python code which came before this
+*/
+
 func interpolateCalibration(freq float64) float64 {
 	keys := make([]float64, 0, len(Calibration))
 	for k := range Calibration {
