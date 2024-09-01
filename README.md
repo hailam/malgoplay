@@ -22,11 +22,6 @@ Versions for iOS, web, and Qt currently in development.
 
 The CLI tool provides several command-line options for configuring the frequency sweep generator:
 
-- `-f`, `--frequency`: Maximum frequency of the sine wave in Hz (default: 1000)
-- `-m`, `--min-frequency`: Minimum frequency to start sweeping from in Hz (default: 0, which means no sweeping)
-- `-a`, `--amplitude`: Amplitude of the sine wave (default: 0.5)
-- `-r`, `--sample-rate`: Sample rate in Hz (default: 48000)
-- `-s`, `--sweep-rate`: Frequency change rate in Hz per second when sweeping (default: 1.0)
 - `--min`, `-m`: Minimum frequency (default: 220)
 - `--max`, `-M`: Maximum frequency (default: 880)
 - `--rate`, `-r`: Sample rate in Hz (default: 44100)
