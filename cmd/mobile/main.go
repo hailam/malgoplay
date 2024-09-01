@@ -1,5 +1,4 @@
 //go:build (linux && cgo) || (darwin && cgo) || windows
-// +build linux,cgo darwin,cgo windows
 
 package mobile_fsg_main
 

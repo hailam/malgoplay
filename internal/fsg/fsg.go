@@ -4,7 +4,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"math"
-	"math/rand/v2"
+	"math/rand"
 	"sync"
 	"time"
 
@@ -56,6 +56,7 @@ type FrequencySweepGenerator struct {
 	isInitialized    bool
 	mutex            sync.Mutex
 	initMutex        sync.Mutex
+	enableLogging    bool
 }
 
 func NewFrequencySweepGenerator(minFreq, maxFreq float64, sampleRate, channels uint32) *FrequencySweepGenerator {
@@ -74,6 +75,7 @@ func NewFrequencySweepGenerator(minFreq, maxFreq float64, sampleRate, channels u
 		fadeOutDuration:  500 * time.Millisecond,
 		randomSeed:       time.Now().UnixNano(),
 		isInitialized:    false,
+		enableLogging:    false,
 	}
 }
 
@@ -93,7 +95,7 @@ func (g *FrequencySweepGenerator) Initialize() error {
 
 	var err error
 	g.context, err = malgo.InitContext(nil, malgo.ContextConfig{}, func(message string) {
-		//println(message)
+		g.Log(fmt.Sprintf("Malgo Log: %v", message))
 	})
 	if err != nil {
 		return err
@@ -127,21 +129,21 @@ func (g *FrequencySweepGenerator) SetMockDevice(device AudioDevice) {
 
 func (g *FrequencySweepGenerator) Start() error {
 	g.mutex.Lock()
-	//println("Start: Acquired lock")
+	g.Log("Start: Acquired lock")
 
 	if !g.isInitialized {
-		//println("Initializing the generator...")
+		g.Log("Initializing the generator...")
 		if err := g.Initialize(); err != nil {
 			g.mutex.Unlock()
 			return err
 		}
 
-		//println("Generator initialized successfully.")
+		g.Log("Generator initialized successfully.")
 	}
 
 	if g.isPlaying {
 		g.mutex.Unlock()
-		//println("Generator is already playing.")
+		g.Log("Generator is already playing.")
 		return nil
 	}
 
@@ -160,21 +162,21 @@ func (g *FrequencySweepGenerator) Start() error {
 
 	// Set the callback for the mock device
 	if mockDevice, ok := g.device.(*MockDevice); ok {
-		//println("Setting mock device callback...")
+		g.Log("Setting mock device callback...")
 		mockDevice.SetCallback(g.DataCallback)
 	}
 
 	time.Sleep(100 * time.Millisecond)
-	//println("Starting the audio device...")
+	g.Log("Starting the audio device...")
 	err := g.device.Start()
 	if err != nil {
 		g.isPlaying = false // Revert if the device failed to start
 		g.mutex.Unlock()
-		//fmt.Printf("Failed to start device: %v\n", err)
+		g.Log(fmt.Sprintf("Failed to start device: %v", err))
 		return err
 	}
 
-	//println("Generator started. Fade-in begins.")
+	g.Log("Generator started. Fade-in begins.")
 	g.mutex.Unlock()
 
 	// Optional: Add a small delay if the real device needs setup time
@@ -186,18 +188,18 @@ func (g *FrequencySweepGenerator) Start() error {
 	g.fadeStartTime = time.Now()
 	g.currentAmplitude = 0
 
-	//println("Generator is now playing.")
+	g.Log("Generator is now playing.")
 	return nil
 }
 
 func (g *FrequencySweepGenerator) Stop() error {
-	//println("Stop: Attempting to stop generator...")
+	g.Log("Stop: Attempting to stop generator...")
 
 	g.mutex.Lock()
-	//println("Stop: Acquired lock")
+	g.Log("Stop: Acquired lock")
 
 	if !g.isPlaying {
-		//println("Generator is not playing.")
+		g.Log("Generator is not playing.")
 		g.mutex.Unlock()
 		return nil
 	}
@@ -251,29 +253,29 @@ func (g *FrequencySweepGenerator) SetFadeDurations(fadeIn, fadeOut time.Duration
 }
 
 func (g *FrequencySweepGenerator) DataCallback(pOutputSample, pInputSamples []byte, framecount uint32) {
-	//println("DataCallback: Acquired lock")
+	g.Log("DataCallback: Acquired lock")
 	if !g.mutex.TryLock() {
-		//println("DataCallback: Failed to acquire lock")
+		g.Log("DataCallback: Failed to acquire lock")
 		return
 	}
 
 	defer func() {
-		//println("DataCallback: Releasing lock")
+		g.Log("DataCallback: Releasing lock")
 		g.mutex.Unlock()
 	}()
 
-	//println("DataCallback invoked.")
+	g.Log("DataCallback invoked.")
 
 	if !g.isPlaying {
-		//println("DataCallback invoked, but generator is not playing.")
+		g.Log("DataCallback invoked, but generator is not playing.")
 		return
 	}
 
-	//println("DataCallback is generating samples.")
+	g.Log("DataCallback is generating samples.")
 
 	samples := framecount * g.channels
 	if samples == 0 {
-		//println("DataCallback: No samples expected to be generated.")
+		g.Log("DataCallback: No samples expected to be generated.")
 		return
 	}
 
@@ -318,7 +320,7 @@ func (g *FrequencySweepGenerator) DataCallback(pOutputSample, pInputSamples []by
 		}
 	}
 
-	//println("DataCallback generated samples.")
+	g.Log("DataCallback generated samples.")
 
 	// Convert float32 samples to bytes
 	for i, sample := range output {
@@ -331,30 +333,31 @@ func (g *FrequencySweepGenerator) interpolateFrequency() float64 {
 	var t float64
 
 	switch g.sweepMode {
-	case SweepModeLinear:
+	case SweepModeSawtooth, SweepModeLinear:
 		t = g.sweepPhase
 	case SweepModeSine:
 		t = 0.5 + 0.5*math.Sin(math.Pi*(g.sweepPhase-0.5))
 	case SweepModeTriangle:
 		if g.sweepPhase < 0.5 {
 			t = g.sweepPhase * 2.0
-		} else {
-			t = 2.0 - g.sweepPhase*2.0
+			break
 		}
+		t = 2.0 - g.sweepPhase*2.0
 	case SweepModeExponential:
 		t = math.Pow(2, g.sweepPhase) - 1
 	case SweepModeLogarithmic:
-		t = math.Log2(1 + g.sweepPhase)
+		const base = 10.0
+		t = math.Log(g.sweepPhase*(base-1)+1) / math.Log(base)
 	case SweepModeSquare:
 		if g.sweepPhase < 0.5 {
 			t = 0
-		} else {
-			t = 1
+			break
 		}
-	case SweepModeSawtooth:
-		t = g.sweepPhase
+		t = 1
 	case SweepModeRandom:
 		g.randomSeed = (g.randomSeed*1103515245 + 12345) & 0x7fffffff
+		//randGen := rand.New(rand.NewSource(g.randomSeed))
+		//g.randomSeed = randGen.Int63()
 		t = float64(g.randomSeed) / float64(0x7fffffff)
 	}
 
@@ -367,11 +370,11 @@ func (g *FrequencySweepGenerator) updateAmplitude() {
 		if elapsed >= g.fadeInDuration {
 			g.currentAmplitude = g.targetAmplitude
 			g.isFadingIn = false
-			//println("Fade-in complete. Amplitude set to target:", g.currentAmplitude)
+			g.Log(fmt.Sprintf("Fade-in complete. Amplitude set to target: %v", g.currentAmplitude))
 			return
 		}
 		g.currentAmplitude = g.targetAmplitude * float64(elapsed) / float64(g.fadeInDuration)
-		////println("Fading in. Current amplitude:", g.currentAmplitude)
+		g.Log(fmt.Sprintf("Fading in. Current amplitude: %v", g.currentAmplitude))
 		return
 	}
 
@@ -380,11 +383,11 @@ func (g *FrequencySweepGenerator) updateAmplitude() {
 		if elapsed >= g.fadeOutDuration {
 			g.currentAmplitude = 0
 			g.isFadingOut = false
-			//println("Fade-out complete. Amplitude set to 0")
+			g.Log("Fade-out complete. Amplitude set to 0")
 			return
 		}
 		g.currentAmplitude = g.targetAmplitude * (1 - float64(elapsed)/float64(g.fadeOutDuration))
-		//println("Fading out. Current amplitude:", g.currentAmplitude)
+		g.Log(fmt.Sprintf("Fading out. Current amplitude: %v", g.currentAmplitude))
 		return
 	}
 
@@ -426,4 +429,10 @@ func (g *FrequencySweepGenerator) Close() error {
 
 	g.isInitialized = false
 	return nil
+}
+
+func (g *FrequencySweepGenerator) Log(message string) {
+	if g.enableLogging {
+		fmt.Println(message)
+	}
 }

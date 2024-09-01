@@ -95,9 +95,3 @@ func (m *MockDevice) GetCapturedSamples() []float32 {
 	defer m.mutex.Unlock()
 	return m.capturedSamples
 }
-
-// Helper function to convert 4 bytes to float32
-func float32frombytes(bytes []byte) float32 {
-	bits := uint32(bytes[0]) | uint32(bytes[1])<<8 | uint32(bytes[2])<<16 | uint32(bytes[3])<<24
-	return math.Float32frombits(bits)
-}
