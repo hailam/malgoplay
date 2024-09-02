@@ -10,3 +10,5 @@ platform/android/fsg-aar/*.aar
 platform/android/malgoplay-aar/*.jar
 platform/android/fsg-aar/*.jar
 platform/android/app/.gradle
+*.hprof
+*.DS_Store
