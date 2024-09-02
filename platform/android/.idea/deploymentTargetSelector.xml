@@ -7,10 +7,10 @@
       </SelectionState>
       <SelectionState runConfigName="MainActivity">
         <option name="selectionMode" value="DROPDOWN" />
-        <DropdownSelection timestamp="2024-08-30T11:01:00.079315Z">
+        <DropdownSelection timestamp="2024-09-02T08:04:54.763685Z">
           <Target type="DEFAULT_BOOT">
             <handle>
-              <DeviceId pluginId="PhysicalDevice" identifier="serial=1B291FDEE000ZP" />
+              <DeviceId pluginId="LocalEmulator" identifier="path=/Users/maix/.android/avd/Television_1080p_API_34.avd" />
             </handle>
           </Target>
         </DropdownSelection>
